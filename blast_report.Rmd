@@ -1,0 +1,114 @@
+---
+title: "Blast_output"
+output: html_document
+params:
+date: "2024-02-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(magrittr)
+library(rentrez)
+library(gtools)
+library(plotly)
+library(htmlwidgets)
+library(sys)
+```
+
+```{r}
+blast_output_file <- params$blast_output
+blast_outputfmt_arg <- params$blast_outputformat
+df_shiny <- params$shiny_data
+contig_selection <- params$contig
+bitscore_selection <- params$bitscore
+
+# blast_output_file <- "Yersinia_megablast.txt"
+# blast_outputfmt_arg <- "blast_output_format.txt"
+#df_shiny <- 
+```
+
+```{r}
+print(paste("Report generated:", Sys.time()))
+```
+
+
+```{r}
+read_blast_output <-
+  function(blast_output_file, blast_outputfmt_arg) {
+    column_names = str_split(names(read_tsv(blast_outputfmt_arg)), pattern = " ")[[1]][-1]
+    raw_df <- read_tsv(blast_output_file, col_names = column_names)
+    raw_df$acc_nr <- raw_df$sseqid %>% str_replace("\\.1_.*", "")
+    
+    org_list <- vector()
+    for (i in unique(raw_df$acc_nr)) {
+      org_list <-
+        append(org_list, entrez_summary(db = "nucleotide", id = i)$organism)
+    }
+    ncbi_df <-
+      tibble(acc_nr = unique(raw_df$acc_nr), organism = org_list)
+    raw_df <- left_join(raw_df, ncbi_df)
+    
+    
+    raw_df <- distinct(raw_df)
+    
+    raw_df$nr <- seq(from = 1, to = nrow(raw_df))
+    raw_df <- raw_df %>% group_by(organism) %>% mutate(no_matches = n())
+    raw_df
+  }
+
+#raw_df <- read_blast_output(blast_output_file = blast_output_file, blast_outputfmt_arg = blast_outputfmt_arg)
+
+raw_df <- df_shiny
+```
+
+The number of 
+
+```{r}
+pie_df <- raw_df %>% mutate(percent_matches = no_matches/nrow(raw_df))
+
+plot_ly(data = pie_df, values = ~no_matches, labels=~organism, type = "pie")
+```
+
+```{r}
+length_df <- raw_df %>% group_by(qseqid, qlen) %>% summarise()
+length_df <- length_df[order(length_df$qlen),]
+level = rev(length_df$qseqid)
+
+
+ggplotly(ggplot(length_df)+
+        geom_col(mapping = aes(factor(qseqid, levels = level), qlen, fill = qseqid))+
+        theme(axis.text.x = element_text(angle = 90))+
+        guides(fill = FALSE)+
+        labs(x = "Contig", y = "Contig Length (bp)"), tooltip = c("qseqid", "qlen")) %>%
+  layout(hovermode = "x")
+```
+```{r}
+ggplotly(ggplot(raw_df)+
+  geom_col(mapping = aes(qseqid, median(bitscore)))+
+  theme(axis.text.x = element_text(angle = 90)), tooltip = "qseqid") %>% layout(hovermode = "x") 
+```
+
+
+
+```{r}
+print(paste("Bitscore value threshold for alignment is", bitscore_selection))
+```
+
+
+```{r}
+p <- ggplot(raw_df %>% filter(qseqid == paste("contig_", contig_selection, sep ="") & bitscore > bitscore_selection), aes(x = qstart, xend= qend, y = as.character(nr), yend= as.character(nr), text = organism, color = bitscore))+
+  geom_segment(position = "stack", size = 3)+
+  geom_segment(mapping = aes(x = 0, xend = qlen, y = qseqid, yend = qseqid), size = 3, color = "red")+
+  guides(fill = FALSE)
+  #geom_label(aes(label = organism, x = qend), nudge_y = -0.4)
+
+align_p <- ggplotly(p, tooltip = c("organism", "qstart", "qend", "bitscore")) %>%
+  layout(hovermode = "x")
+
+align_p
+
+
+
+```
+
