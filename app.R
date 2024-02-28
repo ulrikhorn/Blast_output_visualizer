@@ -88,6 +88,7 @@ server <- function(input, output) {
       ggplotly(ggplot(data() %>% filter(qseqid == paste("contig_", contig_selection(), sep ="") & bitscore > bitscore_selection()), aes(x = qstart, xend= qend, y = as.character(nr), yend= as.character(nr), text = organism, color = bitscore))+
         geom_segment(position = "stack", size = 3)+
         geom_segment(mapping = aes(x = 0, xend = qlen, y = qseqid, yend = qseqid), size = 3, color = "red")+
+          labs(x = "Position (Bp)", y = "Query matches", title = "Contig matches in database")+
           theme(axis.text.y = element_blank(),
                 axis.ticks.y = element_blank())+
         guides(fill = FALSE), tooltip = c("qseqid", "organism", "qstart", "qend", "bitscore", "nr")) %>% layout(hovermode = "x")
@@ -138,10 +139,27 @@ server <- function(input, output) {
                  theme(axis.text.x = element_text(angle = 90)), tooltip = "qseqid") %>% layout(hovermode = "x") 
     })
     
+    
     output$length_hist <- renderPlot({
-      ggplot(data() %>% filter(qseqid == "contig_3"), aes(length, fill = nr))+
-        geom_histogram()
+      test <- data() %>% dplyr::group_by(qseqid) %>% mutate(bin = cut(length, breaks = seq(from = 0, to = max(raw_df$length)+1000, by = 500))) 
+      
+      test$bin <- test$bin %>% str_replace(pattern = ",.*", "") %>% str_replace(pattern = "\\(", "") %>% as.integer() %>% paste(., .+500, sep = "-")
+      
+      test$one = rep(1, times = nrow(test))
+      
+      level_list = mixedsort(unique(test$bin))
+      tmp <- test %>% filter(qseqid == paste("contig_", contig_selection(), sep =""))
+      qlen <- unique(tmp$qlen)
+    
+      ggplot(test %>% filter(qseqid == paste("contig_", contig_selection(), sep ="")))+
+        geom_col(mapping = aes(x = factor(bin, levels = level_list), y = one, fill = pident), position = "stack")+
+        theme(axis.text.x = element_text(angle = 90))+
+        labs(x = "Length (Bp)", y = "Count", title = paste("contig_", contig_selection(), " length ", "= ", qlen, "Bp", sep ="")) #%>% layout(hovermode = "y")
+      
+      
     })
+    
+   
     
     output$report <- downloadHandler(
       filename = "blast_report.html",
